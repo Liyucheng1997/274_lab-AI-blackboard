@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 黑板</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🖍️ AI 黑板</h1>
+    <div class="mode-tabs">
+      <button id="tab-math" class="tab active">数学模式</button>
+      <button id="tab-english" class="tab">英语模式</button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <button id="btn-pen" class="tool active" title="粉笔">✏️ 粉笔</button>
+    <button id="btn-eraser" class="tool" title="板擦">🧽 板擦</button>
+    <button id="btn-clear" class="tool" title="清空黑板">🗑️ 清空</button>
+    <span class="divider"></span>
+    <!-- 数学模式工具 -->
+    <span id="math-tools">
+      <button id="btn-recognize-shape" class="action">✨ 识别并规整图形</button>
+      <button id="btn-recognize-formula" class="action">📐 识别公式并绘图</button>
+      <input id="formula-input" type="text" placeholder="或直接输入公式，如 y = x^2 - 2x">
+      <button id="btn-plot" class="action">绘制</button>
+    </span>
+    <!-- 英语模式工具 -->
+    <span id="english-tools" class="hidden">
+      <button id="btn-recognize-word" class="action">✨ 识别手写单词</button>
+      <input id="word-input" type="text" placeholder="或直接输入单词，如 butterfly">
+      <button id="btn-lookup" class="action">查询</button>
+    </span>
+  </div>
+
+  <div class="board-wrap">
+    <canvas id="board"></canvas>
+    <div id="status" class="hidden"></div>
+  </div>
+
+  <!-- 英语模式结果卡片 -->
+  <div id="word-card" class="hidden">
+    <div class="card-left">
+      <img id="word-image" alt="单词配图">
+    </div>
+    <div class="card-right">
+      <div class="word-head">
+        <span id="word-text"></span>
+        <span id="word-phonetic"></span>
+        <button id="btn-speak" title="朗读">🔊</button>
+      </div>
+      <div id="word-meaning"></div>
+      <ul id="word-examples"></ul>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mathjs@13/lib/browser/math.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
