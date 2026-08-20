@@ -75,6 +75,10 @@
         <input type="text" id="setModel" placeholder="claude-sonnet-5">
       </label>
       <p class="modal-hint">Key 只保存在你自己的浏览器(localStorage),识别请求由浏览器直接发给 Anthropic,不经过任何中间服务器。</p>
+      <label class="modal-check">
+        <input type="checkbox" id="setUseLocal">
+        优先使用本机 claude 服务(需在本机运行本项目,浏览器会询问本地网络访问权限)
+      </label>
       <div class="modal-actions">
         <button id="settingsCancel" class="tab">取消</button>
         <button id="settingsSave" class="action">保存</button>

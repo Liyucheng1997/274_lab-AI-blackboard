@@ -121,11 +121,13 @@ const settingsInfo = document.getElementById('settingsInfo');
 const setApiKey = document.getElementById('setApiKey');
 const setBaseUrl = document.getElementById('setBaseUrl');
 const setModel = document.getElementById('setModel');
+const setUseLocal = document.getElementById('setUseLocal');
 
 document.getElementById('btn-settings').onclick = () => {
   setApiKey.value = settings.apiKey;
   setBaseUrl.value = settings.baseUrl;
   setModel.value = settings.model;
+  setUseLocal.checked = localStorage.getItem(LOCAL_FLAG) === '1';
   settingsInfo.textContent = backend.mode === 'server'
     ? '当前走服务器 AI 后端(claude CLI 订阅额度或服务器密钥),以下配置仅在其不可用时生效。'
     : '未检测到可用的服务器 AI 后端,识别走浏览器直连 Anthropic API,请填写你自己的 API Key。';
@@ -140,19 +142,26 @@ document.getElementById('settingsSave').onclick = () => {
     model: setModel.value.trim() || DEFAULT_SETTINGS.model,
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  if (setUseLocal.checked) localStorage.setItem(LOCAL_FLAG, '1');
+  else localStorage.removeItem(LOCAL_FLAG);
   settingsMask.classList.add('hidden');
+  // 重新探测(勾选本机服务时给 15 秒,留时间响应浏览器的本地网络权限询问)
+  backendReady = detectBackend(setUseLocal.checked ? 15000 : 5000);
   updateBadge();
 };
 
 /* ---------- 后端探测 ---------- */
-// 优先级:① 同源服务器(claude CLI 或服务器密钥) ② 访问者本机 localhost:3275 ③ 浏览器直连 Anthropic API
+// 优先级:① 同源服务器(claude CLI 或服务器密钥) ② 访问者本机 localhost:3275(需在设置中开启,
+// 因为 Chrome 会为"公网页面访问本机"弹权限询问) ③ 浏览器直连 Anthropic API
 const LOCAL_PORT = 3275;
+const LOCAL_FLAG = 'blackboard-use-local';
 let backend = { mode: 'detecting', base: '' };
+let backendReady = Promise.resolve();
 
-async function probeHealth(base) {
+async function probeHealth(base, ms) {
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 2500);
+    const t = setTimeout(() => ctrl.abort(), ms || 2500);
     const r = await fetch(base + '/api/health', { signal: ctrl.signal });
     clearTimeout(t);
     const h = await r.json();
@@ -160,13 +169,17 @@ async function probeHealth(base) {
   } catch { return false; }
 }
 
-const backendReady = (async () => {
+const onLocalPage = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+
+async function detectBackend(localProbeMs) {
   if (await probeHealth('')) backend = { mode: 'server', base: '' };
-  else if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && await probeHealth(`http://localhost:${LOCAL_PORT}`)) {
+  else if (!onLocalPage && localStorage.getItem(LOCAL_FLAG) === '1' &&
+           await probeHealth(`http://localhost:${LOCAL_PORT}`, localProbeMs || 5000)) {
     backend = { mode: 'server', base: `http://localhost:${LOCAL_PORT}` };
   } else backend = { mode: 'direct', base: '' };
   updateBadge();
-})();
+}
+backendReady = detectBackend();
 
 function updateBadge() {
   if (!backendBadge) return;
