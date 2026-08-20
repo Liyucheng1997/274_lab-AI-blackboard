@@ -88,3 +88,45 @@ header h1 { font-size: 22px; color: #ffd97d; }
 #word-examples button.speak-line {
   border: none; background: none; cursor: pointer; font-size: 14px; margin-left: 6px;
 }
+
+/* ---------- 后端徽章与设置弹窗 ---------- */
+.header-right { display: flex; align-items: center; gap: 8px; }
+.header-right .tab {
+  padding: 6px 12px; border: none; cursor: pointer;
+  background: #444; color: #ccc; font-size: 15px; border-radius: 8px;
+}
+.header-right .tab:hover { background: #555; }
+.backend-badge {
+  font-size: 12px; padding: 4px 10px; border-radius: 999px;
+  background: #3a3a3a; color: #aaa;
+}
+.backend-badge.ok { background: rgba(64, 160, 100, 0.25); color: #7fd6a4; }
+.backend-badge.warn { background: rgba(201, 162, 39, 0.22); color: #ffd97d; }
+
+.modal-mask {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-mask.hidden { display: none; }
+.modal {
+  width: min(460px, calc(100vw - 32px));
+  background: #333; border: 1px solid #555;
+  border-radius: 12px; padding: 22px;
+}
+.modal h2 { font-size: 17px; margin-bottom: 6px; color: #ffd97d; }
+.modal-label { display: block; font-size: 13px; color: #aaa; margin-top: 12px; }
+.modal-label input {
+  width: 100%; margin-top: 5px; padding: 9px 11px;
+  background: #2b2b2b; color: #eee;
+  border: 1px solid #555; border-radius: 8px; font-size: 14px;
+}
+.modal-label input:focus { outline: none; border-color: #2f6fb3; }
+.modal-hint { font-size: 12.5px; color: #999; line-height: 1.6; margin: 10px 0 0; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.modal-actions button {
+  padding: 8px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px;
+}
+.modal-actions .tab { background: #444; color: #ccc; }
+.modal-actions .action { background: #2f6fb3; color: #fff; }
+.modal-actions .action:hover { background: #3d82c9; }

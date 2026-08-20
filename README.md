@@ -2,6 +2,8 @@
 
 一块带 AI 能力的网页黑板，支持数学和英语教学场景。
 
+**🔗 在线使用：<https://board.liyucheng.me>**（在「⚙️ 设置」里填自己的 Anthropic API Key，浏览器直连、Key 只存本机）
+
 ## 功能
 
 **数学模式**
@@ -35,5 +37,8 @@ node server.js
 
 浏览器打开 http://localhost:3275 即可。
 
-**AI 额度**：默认走本地 Claude Code CLI（`claude -p`），使用你登录 Claude Code 的订阅额度，**无需 API 密钥**。每次识别约 10~30 秒。
-如果设置了 `ANTHROPIC_API_KEY` 环境变量，则自动改走 Anthropic API（按量计费，速度更快）。
+**AI 后端（三级自动切换）**：
+
+1. **同源服务器**（本地 `node server.js`）：默认走本地 Claude Code CLI（`claude -p`）订阅额度，**无需 API 密钥**，每次识别约 10~30 秒；服务器设置了 `ANTHROPIC_API_KEY` 环境变量则改走 Anthropic API（更快）。
+2. **访问者本机服务**：在线页面会探测你本机 `localhost:3275` 是否运行着本项目（CORS 已放行），运行着就优先用你自己的 claude 订阅额度。
+3. **浏览器直连 Anthropic API**：以上都没有时，在「⚙️ 设置」里填 API Key（只存 localStorage，画布截图由浏览器直发 Anthropic，不经过任何中间服务器）。

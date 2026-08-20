@@ -4,7 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const PORT = process.env.PORT || 3275;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -77,6 +77,11 @@ async function handleAI(req, res) {
 
   // 没有 API 密钥时走本地 Claude Code CLI（订阅额度）
   if (!API_KEY) {
+    if (!hasCli()) {
+      res.writeHead(501, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: '本服务器未安装 claude CLI 也未配置 API Key,请在页面设置中填写 API Key 使用直连模式' }));
+      return;
+    }
     try {
       const text = await callClaudeCLI(payload);
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -118,7 +123,32 @@ async function handleAI(req, res) {
   }
 }
 
+// CORS:允许部署在 board.liyucheng.me 的页面调用访问者本机的这个服务(优先走本地 claude 订阅额度)
+const ALLOWED_ORIGINS = /^https:\/\/board\.liyucheng\.me$|^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+// claude CLI 是否可用(缓存);部署在服务器上时通常没有 CLI
+let cliOk = null;
+function hasCli() {
+  if (cliOk !== null) return cliOk;
+  const out = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['claude'], { encoding: 'utf8' });
+  cliOk = out.status === 0 && !!(out.stdout || '').trim();
+  return cliOk;
+}
+
 const server = http.createServer((req, res) => {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.test(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  }
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+  if (req.method === 'GET' && req.url === '/api/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, service: 'board', llm: API_KEY ? 'key' : (hasCli() ? 'cli' : 'none') }));
+    return;
+  }
   if (req.method === 'POST' && req.url === '/api/ai') {
     handleAI(req, res);
     return;

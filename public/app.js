@@ -106,19 +106,128 @@ function snapshotBase64() {
   return board.toDataURL('image/png').split(',')[1];
 }
 
+/* ---------- 设置(直连 API 模式用,只存本机浏览器) ---------- */
+const SETTINGS_KEY = 'blackboard-settings';
+const DEFAULT_SETTINGS = { apiKey: '', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-5' };
+function loadSettings() {
+  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; }
+  catch { return { ...DEFAULT_SETTINGS }; }
+}
+let settings = loadSettings();
+
+const backendBadge = document.getElementById('backendBadge');
+const settingsMask = document.getElementById('settingsMask');
+const settingsInfo = document.getElementById('settingsInfo');
+const setApiKey = document.getElementById('setApiKey');
+const setBaseUrl = document.getElementById('setBaseUrl');
+const setModel = document.getElementById('setModel');
+
+document.getElementById('btn-settings').onclick = () => {
+  setApiKey.value = settings.apiKey;
+  setBaseUrl.value = settings.baseUrl;
+  setModel.value = settings.model;
+  settingsInfo.textContent = backend.mode === 'server'
+    ? '当前走服务器 AI 后端(claude CLI 订阅额度或服务器密钥),以下配置仅在其不可用时生效。'
+    : '未检测到可用的服务器 AI 后端,识别走浏览器直连 Anthropic API,请填写你自己的 API Key。';
+  settingsMask.classList.remove('hidden');
+};
+document.getElementById('settingsCancel').onclick = () => settingsMask.classList.add('hidden');
+settingsMask.addEventListener('click', (e) => { if (e.target === settingsMask) settingsMask.classList.add('hidden'); });
+document.getElementById('settingsSave').onclick = () => {
+  settings = {
+    apiKey: setApiKey.value.trim(),
+    baseUrl: setBaseUrl.value.trim() || DEFAULT_SETTINGS.baseUrl,
+    model: setModel.value.trim() || DEFAULT_SETTINGS.model,
+  };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  settingsMask.classList.add('hidden');
+  updateBadge();
+};
+
+/* ---------- 后端探测 ---------- */
+// 优先级:① 同源服务器(claude CLI 或服务器密钥) ② 访问者本机 localhost:3275 ③ 浏览器直连 Anthropic API
+const LOCAL_PORT = 3275;
+let backend = { mode: 'detecting', base: '' };
+
+async function probeHealth(base) {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2500);
+    const r = await fetch(base + '/api/health', { signal: ctrl.signal });
+    clearTimeout(t);
+    const h = await r.json();
+    return !!(h && h.ok && (h.llm === 'cli' || h.llm === 'key'));
+  } catch { return false; }
+}
+
+const backendReady = (async () => {
+  if (await probeHealth('')) backend = { mode: 'server', base: '' };
+  else if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && await probeHealth(`http://localhost:${LOCAL_PORT}`)) {
+    backend = { mode: 'server', base: `http://localhost:${LOCAL_PORT}` };
+  } else backend = { mode: 'direct', base: '' };
+  updateBadge();
+})();
+
+function updateBadge() {
+  if (!backendBadge) return;
+  if (backend.mode === 'server') {
+    backendBadge.textContent = backend.base ? '本机 Claude ✓' : '服务器 AI ✓';
+    backendBadge.className = 'backend-badge ok';
+  } else if (backend.mode === 'direct') {
+    backendBadge.textContent = settings.apiKey ? 'API 直连 ✓' : '未配置 API Key';
+    backendBadge.className = 'backend-badge ' + (settings.apiKey ? 'ok' : 'warn');
+  } else {
+    backendBadge.textContent = '检测后端中…';
+    backendBadge.className = 'backend-badge';
+  }
+}
+updateBadge();
+
 async function callAI({ prompt, system, image, maxTokens }) {
-  const resp = await fetch('/api/ai', {
+  await backendReady;
+
+  if (backend.mode === 'server') {
+    const resp = await fetch(backend.base + '/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt, system,
+        image_base64: image || undefined,
+        max_tokens: maxTokens || 1500,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || 'AI 请求失败');
+    return data.text;
+  }
+
+  // 浏览器直连 Anthropic API
+  if (!settings.apiKey) {
+    document.getElementById('btn-settings').click();
+    throw new Error('请先在「⚙️ 设置」里填写 Anthropic API Key(或在本机运行 node server.js)');
+  }
+  const content = [];
+  if (image) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: image } });
+  content.push({ type: 'text', text: prompt || '' });
+
+  const resp = await fetch(settings.baseUrl.replace(/\/+$/, '') + '/v1/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': settings.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
     body: JSON.stringify({
-      prompt, system,
-      image_base64: image || undefined,
+      model: settings.model || 'claude-sonnet-5',
       max_tokens: maxTokens || 1500,
+      system: system || '',
+      messages: [{ role: 'user', content }],
     }),
   });
-  const data = await resp.json();
-  if (!resp.ok || data.error) throw new Error(data.error || 'AI 请求失败');
-  return data.text;
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error?.message || `Anthropic API 请求失败(${resp.status})`);
+  return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 }
 
 // 从 AI 返回的文本里提取 JSON（可能带 ```json 围栏或说明文字）

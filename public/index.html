@@ -14,6 +14,10 @@
       <button id="tab-math" class="tab active">数学模式</button>
       <button id="tab-english" class="tab">英语模式</button>
     </div>
+    <div class="header-right">
+      <span id="backendBadge" class="backend-badge" title="当前 AI 后端"></span>
+      <button id="btn-settings" class="tab" title="设置">⚙️</button>
+    </div>
   </header>
 
   <div class="toolbar">
@@ -54,6 +58,27 @@
       </div>
       <div id="word-meaning"></div>
       <ul id="word-examples"></ul>
+    </div>
+  </div>
+  <!-- 设置弹窗 -->
+  <div id="settingsMask" class="modal-mask hidden">
+    <div class="modal">
+      <h2>设置</h2>
+      <p id="settingsInfo" class="modal-hint"></p>
+      <label class="modal-label">Anthropic API Key
+        <input type="password" id="setApiKey" placeholder="sk-ant-...">
+      </label>
+      <label class="modal-label">API 地址
+        <input type="text" id="setBaseUrl" placeholder="https://api.anthropic.com">
+      </label>
+      <label class="modal-label">模型
+        <input type="text" id="setModel" placeholder="claude-sonnet-5">
+      </label>
+      <p class="modal-hint">Key 只保存在你自己的浏览器(localStorage),识别请求由浏览器直接发给 Anthropic,不经过任何中间服务器。</p>
+      <div class="modal-actions">
+        <button id="settingsCancel" class="tab">取消</button>
+        <button id="settingsSave" class="action">保存</button>
+      </div>
     </div>
   </div>
 </div>
