@@ -74,7 +74,7 @@
       <label class="modal-label">模型
         <input type="text" id="setModel" placeholder="claude-sonnet-5">
       </label>
-      <p class="modal-hint">Key 只保存在你自己的浏览器(localStorage),识别请求由浏览器直接发给 Anthropic,不经过任何中间服务器。</p>
+      <p class="modal-hint">Key 只保存在你自己的浏览器(localStorage),识别请求由浏览器直接发给 API 地址,不经过任何中间服务器。API 地址也可填本机的 claude -p 反代(如 AI 额度 Monitor 的 <code>http://localhost:8787</code>,Key 任意填,走订阅额度)。</p>
       <label class="modal-check">
         <input type="checkbox" id="setUseLocal">
         优先使用本机 claude 服务(需在本机运行本项目,浏览器会询问本地网络访问权限)
