@@ -1,270 +1,282 @@
-/* AI 黑板 - 前端逻辑 */
+/* AI 黑板 - 界面逻辑:手写画布、工具栏、提问、小工具(规整图形 / 函数图像 / 单词卡) */
 
 const board = document.getElementById('board');
 const ctx = board.getContext('2d');
-const statusEl = document.getElementById('status');
-
-const BOARD_BG = '#1e5b3a';
+const BOARD_BG = '#1d3a2f';
 const CHALK_WHITE = '#f5f5f0';
 const CHALK_YELLOW = '#ffd97d';
 const CHALK_BLUE = '#9fd3ff';
 
-let tool = 'pen'; // pen | eraser
-let mode = 'math'; // math | english
+let tool = 'pointer'; // pointer | pen | eraser
+let penColor = CHALK_WHITE;
 let drawing = false;
 let lastX = 0, lastY = 0;
+let inkDirty = false;
 
-/* ---------- 画布初始化 ---------- */
-function resizeBoard() {
-  const w = board.clientWidth || 1000;
-  // 保留旧内容
-  const old = document.createElement('canvas');
-  old.width = board.width; old.height = board.height;
-  if (board.width > 0) old.getContext('2d').drawImage(board, 0, 0);
-  board.width = w;
-  board.height = 560;
-  ctx.fillStyle = BOARD_BG;
-  ctx.fillRect(0, 0, board.width, board.height);
-  if (old.width > 0) ctx.drawImage(old, 0, 0);
+/* ---------- 偏好(本机保存) ---------- */
+const PREFS_KEY = 'blackboard-prefs';
+const levelSel = document.getElementById('level');
+const speedSel = document.getElementById('speed');
+const btnVoice = document.getElementById('btn-voice');
+(function loadPrefs() {
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); } catch {}
+  if (p.level) levelSel.value = p.level;
+  if (p.speed != null) speedSel.value = String(p.speed);
+  if (p.voice === false) prefs.voice = false;
+  prefs.speed = parseFloat(speedSel.value);
+  if (!Number.isFinite(prefs.speed)) prefs.speed = 1;
+  btnVoice.classList.toggle('on', prefs.voice);
+})();
+function savePrefs() {
+  localStorage.setItem(PREFS_KEY, JSON.stringify({ level: levelSel.value, speed: prefs.speed, voice: prefs.voice }));
 }
-window.addEventListener('resize', resizeBoard);
-resizeBoard();
+levelSel.onchange = savePrefs;
+speedSel.onchange = () => { prefs.speed = parseFloat(speedSel.value); savePrefs(); updateControls(); };
+btnVoice.onclick = () => {
+  prefs.voice = !prefs.voice;
+  btnVoice.classList.toggle('on', prefs.voice);
+  if (!prefs.voice && window.speechSynthesis) speechSynthesis.cancel();
+  savePrefs();
+};
 
-function clearBoard() {
-  ctx.fillStyle = BOARD_BG;
-  ctx.fillRect(0, 0, board.width, board.height);
+/* ---------- 手写画布(透明,盖在板书上面,随板书一起滚动) ---------- */
+const DPR = Math.min(2, window.devicePixelRatio || 1);
+let cw = 0, ch = 0;
+function fitCanvas() {
+  const w = innerEl.clientWidth, h = Math.min(innerEl.clientHeight, 9000);
+  if (!w || !h || (w === cw && h === ch)) return;
+  let old = null;
+  if (board.width && board.height && inkDirty) {
+    old = document.createElement('canvas');
+    old.width = board.width; old.height = board.height;
+    old.getContext('2d').drawImage(board, 0, 0);
+  }
+  cw = w; ch = h;
+  board.width = Math.round(w * DPR);
+  board.height = Math.round(h * DPR);
+  board.style.width = w + 'px';
+  board.style.height = h + 'px';
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (old) ctx.drawImage(old, 0, 0);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+new ResizeObserver(fitCanvas).observe(innerEl);
+fitCanvas();
+
+function setInk(dirty) {
+  inkDirty = dirty;
+  document.getElementById('ink-flag').classList.toggle('hidden', !dirty);
 }
 
-/* ---------- 手写 ---------- */
+function clearInk() {
+  ctx.clearRect(0, 0, cw, ch);
+  setInk(false);
+}
+
+// 只擦掉当前可见区域的手写
+function clearVisibleInk() {
+  ctx.clearRect(0, scrollEl.scrollTop, cw, scrollEl.clientHeight);
+}
+
 function pointerPos(e) {
   const r = board.getBoundingClientRect();
-  return [
-    (e.clientX - r.left) * (board.width / r.width),
-    (e.clientY - r.top) * (board.height / r.height),
-  ];
+  return [e.clientX - r.left, e.clientY - r.top];
 }
 
 board.addEventListener('pointerdown', e => {
+  if (tool === 'pointer') return;
   drawing = true;
   [lastX, lastY] = pointerPos(e);
   board.setPointerCapture(e.pointerId);
+  strokeTo(lastX + 0.01, lastY + 0.01);
 });
 board.addEventListener('pointermove', e => {
   if (!drawing) return;
   const [x, y] = pointerPos(e);
+  strokeTo(x, y);
+});
+function strokeTo(x, y) {
+  ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   if (tool === 'pen') {
-    ctx.strokeStyle = CHALK_WHITE;
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = penColor;
+    ctx.lineWidth = 3.4;
+    ctx.globalAlpha = 0.93;
+    setInk(true);
   } else {
-    ctx.strokeStyle = BOARD_BG;
-    ctx.lineWidth = 30;
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.lineWidth = 36;
   }
   ctx.beginPath();
   ctx.moveTo(lastX, lastY);
   ctx.lineTo(x, y);
   ctx.stroke();
+  ctx.restore();
   [lastX, lastY] = [x, y];
-});
-board.addEventListener('pointerup', () => { drawing = false; });
+}
+const endStroke = () => { drawing = false; };
+board.addEventListener('pointerup', endStroke);
+board.addEventListener('pointercancel', endStroke);
+
+// 当前可见区域的截图(深绿底 + 手写),返回 base64 PNG 与纵向偏移
+function snapshot() {
+  const w = scrollEl.clientWidth, h = scrollEl.clientHeight, top = scrollEl.scrollTop;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = BOARD_BG;
+  g.fillRect(0, 0, w, h);
+  g.drawImage(board, 0, top * DPR, w * DPR, h * DPR, 0, 0, w, h);
+  return { b64: c.toDataURL('image/png').split(',')[1], w, h, top };
+}
 
 /* ---------- 工具栏 ---------- */
-const btnPen = document.getElementById('btn-pen');
-const btnEraser = document.getElementById('btn-eraser');
-btnPen.onclick = () => { tool = 'pen'; btnPen.classList.add('active'); btnEraser.classList.remove('active'); };
-btnEraser.onclick = () => { tool = 'eraser'; btnEraser.classList.add('active'); btnPen.classList.remove('active'); };
-document.getElementById('btn-clear').onclick = clearBoard;
-
-/* ---------- 模式切换 ---------- */
-const tabMath = document.getElementById('tab-math');
-const tabEnglish = document.getElementById('tab-english');
-const mathTools = document.getElementById('math-tools');
-const englishTools = document.getElementById('english-tools');
-const wordCard = document.getElementById('word-card');
-
-tabMath.onclick = () => {
-  mode = 'math';
-  tabMath.classList.add('active'); tabEnglish.classList.remove('active');
-  mathTools.classList.remove('hidden'); englishTools.classList.add('hidden');
-  wordCard.classList.add('hidden');
-};
-tabEnglish.onclick = () => {
-  mode = 'english';
-  tabEnglish.classList.add('active'); tabMath.classList.remove('active');
-  englishTools.classList.remove('hidden'); mathTools.classList.add('hidden');
-};
-
-/* ---------- 通用 ---------- */
-function showStatus(msg) {
-  statusEl.textContent = msg;
-  statusEl.classList.remove('hidden');
+const toolBtns = { pointer: document.getElementById('btn-pointer'), pen: document.getElementById('btn-pen'), eraser: document.getElementById('btn-eraser') };
+function setTool(t) {
+  tool = t;
+  for (const k in toolBtns) toolBtns[k].classList.toggle('active', k === t);
+  innerEl.dataset.tool = t;
 }
-function hideStatus() { statusEl.classList.add('hidden'); }
-
-function snapshotBase64() {
-  return board.toDataURL('image/png').split(',')[1];
-}
-
-/* ---------- 设置(直连 API 模式用,只存本机浏览器) ---------- */
-const SETTINGS_KEY = 'blackboard-settings';
-const DEFAULT_SETTINGS = { apiKey: '', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-5' };
-function loadSettings() {
-  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; }
-  catch { return { ...DEFAULT_SETTINGS }; }
-}
-let settings = loadSettings();
-
-const backendBadge = document.getElementById('backendBadge');
-const settingsMask = document.getElementById('settingsMask');
-const settingsInfo = document.getElementById('settingsInfo');
-const setApiKey = document.getElementById('setApiKey');
-const setBaseUrl = document.getElementById('setBaseUrl');
-const setModel = document.getElementById('setModel');
-const setUseLocal = document.getElementById('setUseLocal');
-
-document.getElementById('btn-settings').onclick = () => {
-  setApiKey.value = settings.apiKey;
-  setBaseUrl.value = settings.baseUrl;
-  setModel.value = settings.model;
-  setUseLocal.checked = localStorage.getItem(LOCAL_FLAG) === '1';
-  settingsInfo.textContent = backend.mode === 'server'
-    ? '当前走服务器 AI 后端(claude CLI 订阅额度或服务器密钥),以下配置仅在其不可用时生效。'
-    : '未检测到可用的服务器 AI 后端,识别走浏览器直连 Anthropic API,请填写你自己的 API Key。';
-  settingsMask.classList.remove('hidden');
-};
-document.getElementById('settingsCancel').onclick = () => settingsMask.classList.add('hidden');
-settingsMask.addEventListener('click', (e) => { if (e.target === settingsMask) settingsMask.classList.add('hidden'); });
-document.getElementById('settingsSave').onclick = () => {
-  settings = {
-    apiKey: setApiKey.value.trim(),
-    baseUrl: setBaseUrl.value.trim() || DEFAULT_SETTINGS.baseUrl,
-    model: setModel.value.trim() || DEFAULT_SETTINGS.model,
+toolBtns.pointer.onclick = () => setTool('pointer');
+toolBtns.pen.onclick = () => setTool('pen');
+toolBtns.eraser.onclick = () => setTool('eraser');
+document.querySelectorAll('#pen-colors .dot').forEach(d => {
+  d.onclick = () => {
+    penColor = d.dataset.color;
+    document.querySelectorAll('#pen-colors .dot').forEach(x => x.classList.toggle('active', x === d));
+    setTool('pen');
   };
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  if (setUseLocal.checked) localStorage.setItem(LOCAL_FLAG, '1');
-  else localStorage.removeItem(LOCAL_FLAG);
-  settingsMask.classList.add('hidden');
-  // 重新探测(勾选本机服务时给 15 秒,留时间响应浏览器的本地网络权限询问)
-  backendReady = detectBackend(setUseLocal.checked ? 15000 : 5000);
-  updateBadge();
+});
+document.getElementById('btn-clear').onclick = () => {
+  wipeLesson();
+  clearInk();
+  wordCard.classList.add('hidden');
+  showWelcome();
 };
+setTool('pointer');
 
-/* ---------- 后端探测 ---------- */
-// 优先级:① 同源服务器(claude CLI 或服务器密钥) ② 访问者本机 localhost:3275(需在设置中开启,
-// 因为 Chrome 会为"公网页面访问本机"弹权限询问) ③ 浏览器直连 Anthropic API
-const LOCAL_PORT = 3275;
-const LOCAL_FLAG = 'blackboard-use-local';
-let backend = { mode: 'detecting', base: '' };
-let backendReady = Promise.resolve();
+/* ---------- 播放控制 ---------- */
+const btnPause = document.getElementById('btn-pause');
+const btnSkip = document.getElementById('btn-skip');
+const btnStop = document.getElementById('btn-stop');
+const btnReplay = document.getElementById('btn-replay');
+const suggestEl = document.getElementById('suggest');
+btnPause.onclick = togglePause;
+btnSkip.onclick = skipAnimation;
+btnStop.onclick = stopLesson;
+btnReplay.onclick = replayLesson;
 
-async function probeHealth(base, ms) {
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), ms || 2500);
-    const r = await fetch(base + '/api/health', { signal: ctrl.signal });
-    clearTimeout(t);
-    const h = await r.json();
-    return !!(h && h.ok && (h.llm === 'cli' || h.llm === 'key'));
-  } catch { return false; }
-}
-
-const onLocalPage = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-
-async function detectBackend(localProbeMs) {
-  if (await probeHealth('')) backend = { mode: 'server', base: '' };
-  else if (!onLocalPage && localStorage.getItem(LOCAL_FLAG) === '1' &&
-           await probeHealth(`http://localhost:${LOCAL_PORT}`, localProbeMs || 5000)) {
-    backend = { mode: 'server', base: `http://localhost:${LOCAL_PORT}` };
-  } else backend = { mode: 'direct', base: '' };
-  updateBadge();
-}
-backendReady = detectBackend();
-
-function updateBadge() {
-  if (!backendBadge) return;
-  if (backend.mode === 'server') {
-    backendBadge.textContent = backend.base ? '本机 Claude ✓' : '服务器 AI ✓';
-    backendBadge.className = 'backend-badge ok';
-  } else if (backend.mode === 'direct') {
-    backendBadge.textContent = settings.apiKey ? 'API 直连 ✓' : '未配置 API Key';
-    backendBadge.className = 'backend-badge ' + (settings.apiKey ? 'ok' : 'warn');
-  } else {
-    backendBadge.textContent = '检测后端中…';
-    backendBadge.className = 'backend-badge';
+function updateControls() {
+  const busy = player.running || player.streaming;
+  btnPause.classList.toggle('hidden', !player.running || instant());
+  btnPause.textContent = player.paused ? '▶ 继续' : '⏸ 暂停';
+  btnSkip.classList.toggle('hidden', !busy || instant());
+  btnStop.classList.toggle('hidden', !busy);
+  btnReplay.classList.toggle('hidden', busy || lessonIsEmpty());
+  // 讲完后给出追问建议
+  const items = !busy && player.suggest && player.suggest.length ? player.suggest : null;
+  suggestEl.classList.toggle('hidden', !items);
+  if (items) {
+    suggestEl.innerHTML = '';
+    const tag = document.createElement('span');
+    tag.className = 'chips-label';
+    tag.textContent = '继续问:';
+    suggestEl.appendChild(tag);
+    items.forEach(q => suggestEl.appendChild(chip(q, () => ask(q))));
   }
 }
-updateBadge();
+onLessonState = updateControls;
 
-async function callAI({ prompt, system, image, maxTokens }) {
-  await backendReady;
+function chip(text, onclick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'chip';
+  b.textContent = text;
+  b.onclick = onclick;
+  return b;
+}
 
-  if (backend.mode === 'server') {
-    const resp = await fetch(backend.base + '/api/ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt, system,
-        image_base64: image || undefined,
-        max_tokens: maxTokens || 1500,
-      }),
-    });
-    const data = await resp.json();
-    if (!resp.ok || data.error) throw new Error(data.error || 'AI 请求失败');
-    return data.text;
-  }
-
-  // 浏览器直连 Anthropic API
-  if (!settings.apiKey) {
-    document.getElementById('btn-settings').click();
-    throw new Error('请先在「⚙️ 设置」里填写 Anthropic API Key(或在本机运行 node server.js)');
-  }
-  const content = [];
-  if (image) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: image } });
-  content.push({ type: 'text', text: prompt || '' });
-
-  const resp = await fetch(settings.baseUrl.replace(/\/+$/, '') + '/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': settings.apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: settings.model || 'claude-sonnet-5',
-      max_tokens: maxTokens || 1500,
-      system: system || '',
-      messages: [{ role: 'user', content }],
-    }),
+/* ---------- 欢迎页 ---------- */
+const EXAMPLES = [
+  ['数学 · 证明', ['证明 √2 是无理数', '证明勾股定理', '证明素数有无穷多个', '为什么 0.999… = 1?']],
+  ['数学 · 讲解', ['讲解二次函数 y = x² − 2x − 3 的图像与性质', '用图像解释导数的几何意义', '推导一元二次方程的求根公式']],
+  ['英语 · 词源与语法', ['讲解 biology 的词源和同根词', '分析句子的语法结构: The book that I bought yesterday is very interesting.', '现在完成时和一般过去时有什么区别?']],
+];
+function showWelcome() {
+  if (!lessonIsEmpty()) return;
+  lessonEl.innerHTML = '';
+  const w = document.createElement('div');
+  w.className = 'welcome';
+  const h = document.createElement('div');
+  h.className = 'welcome-title';
+  h.textContent = '问一个问题,看老师一步一步写出来';
+  const sub = document.createElement('div');
+  sub.className = 'welcome-sub';
+  sub.textContent = '严谨的证明、解题过程、函数图像与几何图、英语词源和长难句分析……也可以拿起粉笔把题目写在黑板上再提问。';
+  w.append(h, sub);
+  EXAMPLES.forEach(([label, list]) => {
+    const g = document.createElement('div');
+    g.className = 'welcome-group';
+    const l = document.createElement('div');
+    l.className = 'welcome-label';
+    l.textContent = label;
+    const row = document.createElement('div');
+    row.className = 'chips';
+    list.forEach(q => row.appendChild(chip(q, () => ask(q, { fresh: true }))));
+    g.append(l, row);
+    w.appendChild(g);
   });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.error?.message || `Anthropic API 请求失败(${resp.status})`);
-  return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  lessonEl.appendChild(w);
+  suggestEl.classList.add('hidden');
+}
+showWelcome();
+
+/* ---------- 提问 ---------- */
+const askForm = document.getElementById('ask-form');
+const askInput = document.getElementById('ask-input');
+const inkAttach = document.getElementById('ink-attach');
+
+function ask(question, opt) {
+  opt = opt || {};
+  suggestEl.classList.add('hidden');
+  if (inkDirty && inkAttach.checked && !opt.fresh) opt.image = snapshot().b64;
+  return askLesson(question, opt);
 }
 
-// 从 AI 返回的文本里提取 JSON（可能带 ```json 围栏或说明文字）
-function extractJSON(text) {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) text = fenced[1];
-  const start = Math.min(
-    ...['[', '{'].map(c => { const i = text.indexOf(c); return i === -1 ? Infinity : i; })
-  );
-  if (start === Infinity) throw new Error('AI 未返回 JSON');
-  const end = Math.max(text.lastIndexOf(']'), text.lastIndexOf('}'));
-  return JSON.parse(text.slice(start, end + 1));
+askForm.addEventListener('submit', e => {
+  e.preventDefault();
+  let q = askInput.value.trim();
+  if (!q) {
+    if (inkDirty && inkAttach.checked) q = '请讲解黑板上手写的内容(如果是一道题,请给出完整严谨的解答)。';
+    else { askInput.focus(); return; }
+  }
+  askInput.value = '';
+  autoGrow();
+  ask(q);
+});
+askInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); askForm.requestSubmit(); }
+});
+function autoGrow() {
+  askInput.style.height = 'auto';
+  askInput.style.height = Math.min(askInput.scrollHeight, 140) + 'px';
 }
+askInput.addEventListener('input', autoGrow);
 
-/* ==================== 数学模式 ==================== */
+const fail = (prefix, err) => showStatus(prefix + ': ' + err.message, 5000);
 
-/* ---- 1. 手绘图形 → 标准图形 + 角度标注 ---- */
+/* ==================== 小工具一:手绘图形 → 标准图形 + 角度标注 ==================== */
 document.getElementById('btn-recognize-shape').onclick = async () => {
+  if (!inkDirty) { showStatus('先用 ✏️ 粉笔在黑板上画一个图形', 3000); return; }
   try {
     showStatus('正在识别图形…');
+    const snap = snapshot();
     const text = await callAI({
-      image: snapshotBase64(),
+      image: snap.b64,
       system: '你是几何图形识别助手。只输出 JSON，不要任何其他文字。',
-      prompt: `图片是一块黑板（尺寸 ${board.width}x${board.height} 像素），上面有手绘的几何图形。请识别出所有图形，并给出规整后的坐标（图片像素坐标系）。输出 JSON 数组，每个元素形如：
+      prompt: `图片是一块黑板（尺寸 ${snap.w}x${snap.h} 像素），上面有手绘的几何图形。请识别出所有图形，并给出规整后的坐标（图片像素坐标系）。输出 JSON 数组，每个元素形如：
 {"type":"triangle","points":[[x1,y1],[x2,y2],[x3,y3]]}
 {"type":"rectangle","points":[[左上x,左上y],[右上],[右下],[左下]]}（如果是正方形请让四边等长）
 {"type":"circle","center":[x,y],"radius":r}
@@ -274,13 +286,13 @@ document.getElementById('btn-recognize-shape').onclick = async () => {
     });
     const shapes = extractJSON(text);
     if (!Array.isArray(shapes) || shapes.length === 0) throw new Error('未识别到图形');
-    clearBoard();
+    clearVisibleInk();
+    ctx.save();
+    ctx.translate(0, snap.top);
     shapes.forEach(drawShape);
+    ctx.restore();
     hideStatus();
-  } catch (err) {
-    showStatus('识别失败: ' + err.message);
-    setTimeout(hideStatus, 4000);
-  }
+  } catch (err) { fail('识别失败', err); }
 };
 
 function drawShape(s) {
@@ -292,7 +304,6 @@ function drawShape(s) {
     ctx.beginPath();
     ctx.arc(s.center[0], s.center[1], s.radius, 0, Math.PI * 2);
     ctx.stroke();
-    // 圆心
     ctx.fillStyle = CHALK_YELLOW;
     ctx.beginPath();
     ctx.arc(s.center[0], s.center[1], 3, 0, Math.PI * 2);
@@ -329,8 +340,7 @@ function annotateTriangle(pts) {
     // 角度标签放在顶点朝质心方向内侧
     const dx = cx - p[0], dy = cy - p[1];
     const d = Math.hypot(dx, dy) || 1;
-    const tx = p[0] + dx / d * 34, ty = p[1] + dy / d * 34;
-    chalkText(angles[i].toFixed(1) + '°', tx, ty, CHALK_BLUE, 16, true);
+    chalkText(angles[i].toFixed(1) + '°', p[0] + dx / d * 34, p[1] + dy / d * 34, CHALK_BLUE, 16, true);
   });
   annotateSides(pts);
 }
@@ -339,164 +349,78 @@ function annotateTriangle(pts) {
 function annotateSides(pts) {
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i], b = pts[(i + 1) % pts.length];
-    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
-    chalkText(Math.round(dist(a, b)) + 'px', mx + 6, my - 6, CHALK_WHITE, 13);
+    chalkText(Math.round(dist(a, b)) + 'px', (a[0] + b[0]) / 2 + 6, (a[1] + b[1]) / 2 - 6, CHALK_WHITE, 13);
   }
 }
 
 function chalkText(text, x, y, color, size, center) {
   ctx.fillStyle = color;
-  ctx.font = `${size || 15}px "Comic Sans MS", "Microsoft YaHei", sans-serif`;
+  ctx.font = `${size || 15}px "LXGW WenKai Screen", KaiTi, "Microsoft YaHei", sans-serif`;
   ctx.textAlign = center ? 'center' : 'left';
   ctx.fillText(text, x, y);
   ctx.textAlign = 'left';
 }
 
-/* ---- 2. 公式 → 函数图像 ---- */
-document.getElementById('btn-plot').onclick = () => {
-  const expr = document.getElementById('formula-input').value.trim();
-  if (!expr) { showStatus('请先输入公式'); setTimeout(hideStatus, 2000); return; }
-  plotFormula(expr);
-};
-
-document.getElementById('btn-recognize-formula').onclick = async () => {
-  try {
-    showStatus('正在识别公式…');
-    const text = await callAI({
-      image: snapshotBase64(),
-      system: '你是手写数学公式识别助手。',
-      prompt: '图片黑板上有一个手写的数学公式（关于 x 的函数）。请把它转换成 math.js 可以解析的表达式，只输出表达式本身（不要 y=，不要解释）。例如手写 y=x²-2x 就输出 x^2 - 2*x。如果看不到公式，输出 NONE。',
-      maxTokens: 200,
-    });
-    const expr = text.trim().replace(/^y\s*=\s*/i, '');
-    if (expr === 'NONE' || !expr) throw new Error('黑板上没有识别到公式');
-    document.getElementById('formula-input').value = expr;
-    plotFormula(expr);
-  } catch (err) {
-    showStatus('识别失败: ' + err.message);
-    setTimeout(hideStatus, 4000);
-  }
-};
-
-function plotFormula(exprRaw) {
-  let compiled;
-  const expr = exprRaw.replace(/^y\s*=\s*/i, '');
-  try {
-    compiled = math.compile(expr);
-    compiled.evaluate({ x: 1 }); // 试算
-  } catch {
-    showStatus('公式无法解析: ' + expr);
-    setTimeout(hideStatus, 3000);
-    return;
-  }
-  hideStatus();
-  clearBoard();
-
-  const W = board.width, H = board.height;
-  const xMin = -10, xMax = 10;
-  // 采样求 y 范围
-  const N = 600;
-  const samples = [];
-  let yMin = Infinity, yMax = -Infinity;
-  for (let i = 0; i <= N; i++) {
-    const x = xMin + (xMax - xMin) * i / N;
-    let y;
-    try { y = compiled.evaluate({ x }); } catch { y = NaN; }
-    if (typeof y !== 'number' || !isFinite(y)) { samples.push(null); continue; }
-    samples.push([x, y]);
-    if (y < yMin) yMin = y;
-    if (y > yMax) yMax = y;
-  }
-  if (yMin === Infinity) { showStatus('该公式在 [-10,10] 上没有有效值'); setTimeout(hideStatus, 3000); return; }
-  // y 范围留白，且不要过扁
-  if (yMax - yMin < 1e-9) { yMin -= 1; yMax += 1; }
-  const pad = (yMax - yMin) * 0.15;
-  yMin -= pad; yMax += pad;
-  // 限制极端范围，避免渐近线把图压扁
-  if (yMax > 60) yMax = 60;
-  if (yMin < -60) yMin = -60;
-
-  const margin = 40;
-  const sx = x => margin + (x - xMin) / (xMax - xMin) * (W - 2 * margin);
-  const sy = y => H - margin - (y - yMin) / (yMax - yMin) * (H - 2 * margin);
-
-  // 坐标轴
-  ctx.strokeStyle = 'rgba(245,245,240,.55)';
-  ctx.lineWidth = 1.5;
-  const axisY = (0 >= yMin && 0 <= yMax) ? sy(0) : H - margin; // x 轴
-  const axisX = (0 >= xMin && 0 <= xMax) ? sx(0) : margin;     // y 轴
-  ctx.beginPath();
-  ctx.moveTo(margin - 10, axisY); ctx.lineTo(W - margin + 10, axisY);
-  ctx.moveTo(axisX, margin - 10); ctx.lineTo(axisX, H - margin + 10);
-  ctx.stroke();
-
-  // 刻度
-  ctx.fillStyle = 'rgba(245,245,240,.7)';
-  ctx.font = '12px sans-serif';
-  for (let x = Math.ceil(xMin); x <= xMax; x += 2) {
-    if (x === 0) continue;
-    const px = sx(x);
-    ctx.beginPath(); ctx.moveTo(px, axisY - 4); ctx.lineTo(px, axisY + 4); ctx.stroke();
-    ctx.fillText(x, px - 6, axisY + 18);
-  }
-  const yStep = niceStep((yMax - yMin) / 8);
-  for (let y = Math.ceil(yMin / yStep) * yStep; y <= yMax; y += yStep) {
-    if (Math.abs(y) < yStep / 2) continue;
-    const py = sy(y);
-    ctx.beginPath(); ctx.moveTo(axisX - 4, py); ctx.lineTo(axisX + 4, py); ctx.stroke();
-    ctx.fillText(+y.toFixed(2), axisX + 8, py + 4);
-  }
-
-  // 曲线
-  ctx.strokeStyle = CHALK_YELLOW;
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  let penUp = true;
-  for (const s of samples) {
-    if (!s || s[1] < yMin || s[1] > yMax) { penUp = true; continue; }
-    const px = sx(s[0]), py = sy(s[1]);
-    if (penUp) { ctx.moveTo(px, py); penUp = false; }
-    else ctx.lineTo(px, py);
-  }
-  ctx.stroke();
-
-  chalkText('y = ' + expr, margin + 10, margin - 12, CHALK_BLUE, 18);
+/* ==================== 小工具二:公式 → 函数图像 ==================== */
+function toExpr(raw) {
+  return String(raw).trim().replace(/^[yf]\s*(\(x\))?\s*=\s*/i, '')
+    .replace(/²/g, '^2').replace(/³/g, '^3').replace(/[−–]/g, '-').replace(/×/g, '*').replace(/÷/g, '/');
+}
+function tryCompile(expr) {
+  try { const v = math.compile(expr).evaluate({ x: 1.234 }); return typeof v === 'number'; } catch { return false; }
 }
 
-function niceStep(raw) {
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  const n = raw / mag;
-  return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * mag;
-}
-
-/* ==================== 英语模式 ==================== */
-
-document.getElementById('btn-recognize-word').onclick = async () => {
+document.getElementById('btn-plot').onclick = async () => {
   try {
-    showStatus('正在识别手写单词…');
-    const text = await callAI({
-      image: snapshotBase64(),
-      system: '你是手写英文识别助手。',
-      prompt: '图片黑板上手写了一个英文单词，请只输出这个单词本身（小写），不要任何其他文字。如果没有单词，输出 NONE。',
-      maxTokens: 50,
-    });
-    const word = text.trim().toLowerCase();
-    if (word === 'none' || !/^[a-z][a-z\-']*$/.test(word)) throw new Error('黑板上没有识别到英文单词');
-    document.getElementById('word-input').value = word;
+    let expr = toExpr(askInput.value);
+    if (!expr || !tryCompile(expr)) {
+      if (!inkDirty) { showStatus('在输入框里写一个公式(如 x^2 - 2x),或用粉笔把公式写在黑板上', 4000); return; }
+      showStatus('正在识别手写公式…');
+      const text = await callAI({
+        image: snapshot().b64,
+        system: '你是手写数学公式识别助手。',
+        prompt: '图片黑板上有一个手写的数学公式（关于 x 的函数）。请把它转换成 math.js 可以解析的表达式，只输出表达式本身（不要 y=，不要解释）。例如手写 y=x²-2x 就输出 x^2 - 2*x。如果看不到公式，输出 NONE。',
+      });
+      expr = toExpr(text.trim().split('\n').pop());
+      if (/^none$/i.test(expr) || !expr) throw new Error('黑板上没有识别到公式');
+      if (!tryCompile(expr)) throw new Error('公式无法解析: ' + expr);
+      clearVisibleInk();
+    } else {
+      askInput.value = '';
+      autoGrow();
+    }
+    hideStatus();
+    lessonEl.querySelector('.welcome')?.remove();
+    const ops = [];
+    if (!lessonIsEmpty()) ops.push({ op: 'divider' });
+    ops.push({ op: 'h', text: '函数图像' }, { op: 'plot', fns: [{ expr, label: 'y = ' + expr }], xmin: -10, xmax: 10 });
+    playLocalOps(ops);
+  } catch (err) { fail('绘图失败', err); }
+};
+
+/* ==================== 小工具三:单词卡 ==================== */
+const wordCard = document.getElementById('word-card');
+document.getElementById('word-close').onclick = () => wordCard.classList.add('hidden');
+
+document.getElementById('btn-word').onclick = async () => {
+  try {
+    let word = askInput.value.trim().toLowerCase();
+    if (!/^[a-z][a-z\-']*$/.test(word)) {
+      if (!inkDirty) { showStatus('在输入框里写一个英文单词,或用粉笔把单词写在黑板上', 4000); return; }
+      showStatus('正在识别手写单词…');
+      const text = await callAI({
+        image: snapshot().b64,
+        system: '你是手写英文识别助手。',
+        prompt: '图片黑板上手写了一个英文单词，请只输出这个单词本身（小写），不要任何其他文字。如果没有单词，输出 NONE。',
+      });
+      word = text.trim().split(/\s+/).pop().toLowerCase().replace(/[^a-z\-']/g, '');
+      if (word === 'none' || !/^[a-z][a-z\-']*$/.test(word)) throw new Error('黑板上没有识别到英文单词');
+    } else {
+      askInput.value = '';
+      autoGrow();
+    }
     await lookupWord(word);
-  } catch (err) {
-    showStatus('识别失败: ' + err.message);
-    setTimeout(hideStatus, 4000);
-  }
-};
-
-document.getElementById('btn-lookup').onclick = () => {
-  const word = document.getElementById('word-input').value.trim().toLowerCase();
-  if (!word) { showStatus('请先输入单词'); setTimeout(hideStatus, 2000); return; }
-  lookupWord(word).catch(err => {
-    showStatus('查询失败: ' + err.message);
-    setTimeout(hideStatus, 4000);
-  });
+  } catch (err) { fail('查询失败', err); }
 };
 
 async function lookupWord(word) {
@@ -529,27 +453,33 @@ async function lookupWord(word) {
     const speakBtn = document.createElement('button');
     speakBtn.className = 'speak-line';
     speakBtn.textContent = '🔊';
-    speakBtn.onclick = () => speak(ex.en);
+    speakBtn.onclick = () => speakEn(ex.en);
     en.appendChild(speakBtn);
     const zh = document.createElement('div');
     zh.className = 'zh';
     zh.textContent = ex.zh;
-    li.appendChild(en); li.appendChild(zh);
+    li.append(en, zh);
     ul.appendChild(li);
   });
 
-  document.getElementById('word-card').classList.remove('hidden');
+  wordCard.classList.remove('hidden');
   hideStatus();
-  speak(word);
+  speakEn(word);
 }
 
 document.getElementById('btn-speak').onclick = () => {
   const w = document.getElementById('word-text').textContent;
-  if (w) speak(w);
+  if (w) speakEn(w);
+};
+document.getElementById('word-explain').onclick = () => {
+  const w = document.getElementById('word-text').textContent;
+  wordCard.classList.add('hidden');
+  if (w) ask(`讲解英语单词 ${w} 的词源、构词、同根词和用法`);
 };
 
-/* 朗读：浏览器内置 Web Speech API，免费离线可用 */
-function speak(text) {
+/* 英文朗读：浏览器内置 Web Speech API */
+function speakEn(text) {
+  if (!window.speechSynthesis) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'en-US';
@@ -558,5 +488,3 @@ function speak(text) {
   if (voice) u.voice = voice;
   speechSynthesis.speak(u);
 }
-// 某些浏览器需要先触发一次 getVoices
-speechSynthesis.getVoices();

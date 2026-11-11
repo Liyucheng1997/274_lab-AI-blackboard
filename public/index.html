@@ -3,90 +3,150 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI 黑板</title>
+<title>AI 黑板 · 板书讲解</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-screen-webfont@1.7.0/lxgwwenkaiscreen.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<!-- 粉笔质感滤镜 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="chalk-rough" x="-5%" y="-20%" width="110%" height="140%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.6"/>
+  </filter>
+</svg>
+
 <div id="app">
   <header>
-    <h1>🖍️ AI 黑板</h1>
-    <div class="mode-tabs">
-      <button id="tab-math" class="tab active">数学模式</button>
-      <button id="tab-english" class="tab">英语模式</button>
-    </div>
+    <h1>AI 黑板<span class="sub">板书讲解</span></h1>
     <div class="header-right">
+      <label class="pill-select" title="讲解难度">
+        <select id="level">
+          <option value="auto">难度 · 自动</option>
+          <option value="小学">小学</option>
+          <option value="初中">初中</option>
+          <option value="高中">高中</option>
+          <option value="大学">大学</option>
+        </select>
+      </label>
+      <label class="pill-select" title="书写与朗读速度">
+        <select id="speed">
+          <option value="0.7">慢速</option>
+          <option value="1" selected>正常</option>
+          <option value="1.6">快速</option>
+          <option value="0">直接显示</option>
+        </select>
+      </label>
+      <button id="btn-voice" class="pill on" title="语音讲解开/关">🔊 讲解</button>
       <span id="backendBadge" class="backend-badge" title="当前 AI 后端"></span>
-      <button id="btn-settings" class="tab" title="设置">⚙️</button>
+      <button id="btn-settings" class="pill" title="设置">⚙️</button>
     </div>
   </header>
 
   <div class="toolbar">
-    <button id="btn-pen" class="tool active" title="粉笔">✏️ 粉笔</button>
-    <button id="btn-eraser" class="tool" title="板擦">🧽 板擦</button>
-    <button id="btn-clear" class="tool" title="清空黑板">🗑️ 清空</button>
+    <div class="group">
+      <button id="btn-pointer" class="tool active" title="指针:点板书可追问">👆 指针</button>
+      <button id="btn-pen" class="tool" title="粉笔:在黑板上手写">✏️ 粉笔</button>
+      <span id="pen-colors" class="colors">
+        <button class="dot active" data-color="#f5f5f0" style="--c:#f5f5f0" title="白"></button>
+        <button class="dot" data-color="#ffd97d" style="--c:#ffd97d" title="黄"></button>
+        <button class="dot" data-color="#9fd3ff" style="--c:#9fd3ff" title="蓝"></button>
+        <button class="dot" data-color="#ff9a8b" style="--c:#ff9a8b" title="红"></button>
+      </span>
+      <button id="btn-eraser" class="tool" title="板擦:擦手写内容">🧽 板擦</button>
+      <button id="btn-clear" class="tool" title="擦掉整块黑板,开始新话题">🧹 擦黑板</button>
+    </div>
     <span class="divider"></span>
-    <!-- 数学模式工具 -->
-    <span id="math-tools">
-      <button id="btn-recognize-shape" class="action">✨ 识别并规整图形</button>
-      <button id="btn-recognize-formula" class="action">📐 识别公式并绘图</button>
-      <input id="formula-input" type="text" placeholder="或直接输入公式，如 y = x^2 - 2x">
-      <button id="btn-plot" class="action">绘制</button>
-    </span>
-    <!-- 英语模式工具 -->
-    <span id="english-tools" class="hidden">
-      <button id="btn-recognize-word" class="action">✨ 识别手写单词</button>
-      <input id="word-input" type="text" placeholder="或直接输入单词，如 butterfly">
-      <button id="btn-lookup" class="action">查询</button>
-    </span>
+    <div class="group">
+      <button id="btn-recognize-shape" class="tool" title="把手绘图形规整成标准图形并标注角度">📐 规整图形</button>
+      <button id="btn-plot" class="tool" title="把输入框或手写的公式画成函数图像">📈 函数图像</button>
+      <button id="btn-word" class="tool" title="把输入框或手写的英文单词做成单词卡">🔤 单词卡</button>
+    </div>
+    <span class="spacer"></span>
+    <div class="group" id="play-controls">
+      <button id="btn-pause" class="tool hidden" title="暂停/继续">⏸ 暂停</button>
+      <button id="btn-skip" class="tool hidden" title="跳过书写动画,直接写完">⏭ 直接写完</button>
+      <button id="btn-stop" class="tool hidden" title="停止讲解">⏹ 停止</button>
+      <button id="btn-replay" class="tool hidden" title="把这块板书从头再讲一遍">↻ 重讲</button>
+    </div>
   </div>
 
   <div class="board-wrap">
-    <canvas id="board"></canvas>
+    <div id="board-scroll">
+      <div id="board-inner">
+        <div id="lesson"></div>
+        <canvas id="board"></canvas>
+        <div id="chalk-cursor" class="hidden"></div>
+      </div>
+    </div>
     <div id="status" class="hidden"></div>
+    <div id="caption" class="hidden"></div>
+
+    <!-- 单词卡 -->
+    <div id="word-card" class="hidden">
+      <button id="word-close" class="card-close" title="关闭">×</button>
+      <img id="word-image" alt="单词配图">
+      <div class="card-right">
+        <div class="word-head">
+          <span id="word-text"></span>
+          <span id="word-phonetic"></span>
+          <button id="btn-speak" title="朗读">🔊</button>
+        </div>
+        <div id="word-meaning"></div>
+        <ul id="word-examples"></ul>
+        <button id="word-explain" class="pill">✍️ 在黑板上讲解词源</button>
+      </div>
+    </div>
   </div>
 
-  <!-- 英语模式结果卡片 -->
-  <div id="word-card" class="hidden">
-    <div class="card-left">
-      <img id="word-image" alt="单词配图">
-    </div>
-    <div class="card-right">
-      <div class="word-head">
-        <span id="word-text"></span>
-        <span id="word-phonetic"></span>
-        <button id="btn-speak" title="朗读">🔊</button>
-      </div>
-      <div id="word-meaning"></div>
-      <ul id="word-examples"></ul>
-    </div>
-  </div>
+  <div id="suggest" class="chips hidden"></div>
+
+  <form id="ask-form" class="ask-bar">
+    <textarea id="ask-input" rows="1" placeholder="向 AI 老师提问:证明√2是无理数 / 讲讲 biology 的词源 / 分析这个句子的语法…"></textarea>
+    <label id="ink-flag" class="ink-flag hidden" title="把黑板上的手写内容一起发给 AI">
+      <input type="checkbox" id="ink-attach" checked> 附带手写
+    </label>
+    <button id="ask-send" type="submit" class="send">讲解</button>
+  </form>
+
   <!-- 设置弹窗 -->
   <div id="settingsMask" class="modal-mask hidden">
     <div class="modal">
       <h2>设置</h2>
       <p id="settingsInfo" class="modal-hint"></p>
+      <label class="modal-label">模型
+        <input type="text" id="setModel" placeholder="claude-opus-5-5">
+      </label>
+      <label class="modal-label">思考深度(越高越严谨,也越慢)
+        <select id="setEffort">
+          <option value="low">低 · 最快</option>
+          <option value="medium">中 · 推荐</option>
+          <option value="high">高 · 复杂证明</option>
+        </select>
+      </label>
       <label class="modal-label">Anthropic API Key
         <input type="password" id="setApiKey" placeholder="sk-ant-...">
       </label>
       <label class="modal-label">API 地址
         <input type="text" id="setBaseUrl" placeholder="https://api.anthropic.com">
       </label>
-      <label class="modal-label">模型
-        <input type="text" id="setModel" placeholder="claude-sonnet-5">
-      </label>
-      <p class="modal-hint">Key 只保存在你自己的浏览器(localStorage),识别请求由浏览器直接发给 API 地址,不经过任何中间服务器。API 地址也可填本机的 claude -p 反代(如 AI 额度 Monitor 的 <code>http://localhost:8787</code>,Key 任意填,走订阅额度)。</p>
+      <p class="modal-hint">Key 只保存在你自己的浏览器(localStorage),请求由浏览器直接发给 API 地址,不经过任何中间服务器。API 地址也可填本机的 claude -p 反代(如 AI 额度 Monitor 的 <code>http://localhost:8787</code>,Key 任意填,走订阅额度)。</p>
       <label class="modal-check">
         <input type="checkbox" id="setUseLocal">
         优先使用本机 claude 服务(需在本机运行本项目,浏览器会询问本地网络访问权限)
       </label>
       <div class="modal-actions">
-        <button id="settingsCancel" class="tab">取消</button>
-        <button id="settingsSave" class="action">保存</button>
+        <button id="settingsCancel" class="pill">取消</button>
+        <button id="settingsSave" class="send">保存</button>
       </div>
     </div>
   </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mathjs@13/lib/browser/math.min.js"></script>
+<script src="ai.js"></script>
+<script src="lesson.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
