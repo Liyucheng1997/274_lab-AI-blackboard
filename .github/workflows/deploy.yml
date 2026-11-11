@@ -1,0 +1,41 @@
+name: Deploy to board.liyucheng.me
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-board
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: for f in server.js public/*.js; do node --check "$f"; done
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.BOARD_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "151.80.60.57 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJX3C2/3Kxz6CYrjuY6dY+1U2nLsr0gY8u6ggeX06crr" >> ~/.ssh/known_hosts
+
+      # 服务器上该密钥被限制为只能运行 /usr/local/bin/deploy-board(见 deploy/deploy-board.sh):
+      # 在 /opt/apps/board 里拉取 main 并重启 app-board 服务
+      - name: Deploy
+        run: ssh ubuntu@151.80.60.57
+
+      - name: Verify live site
+        run: |
+          sleep 2
+          for url in https://board.liyucheng.me/ https://board.liyucheng.me/api/health; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+            echo "$url -> $code"
+            test "$code" = "200"
+          done

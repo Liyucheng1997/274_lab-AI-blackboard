@@ -48,3 +48,7 @@ node server.js
 1. **同源服务器**(本地 `node server.js`):默认走本地 Claude Code CLI(`claude -p`)订阅额度,**无需 API 密钥**;服务器设置了 `ANTHROPIC_API_KEY` 环境变量则改走 Anthropic API。环境变量 `BOARD_MODEL` 可改服务器默认模型。
 2. **访问者本机服务**:在线页面可在设置中开启"优先使用本机 claude 服务",探测本机 `localhost:3275` 是否运行着本项目(CORS 已放行),运行着就用你自己的 claude 订阅额度。
 3. **浏览器直连 Anthropic API**:以上都没有时,在「⚙️ 设置」里填 API Key(只存 localStorage,请求由浏览器直发 Anthropic,不经过任何中间服务器)。
+
+## 部署
+
+推送到 `main` 后,GitHub Actions([.github/workflows/deploy.yml](.github/workflows/deploy.yml))会自动把 board.liyucheng.me 更新到最新版本:用一把只能运行 `deploy-board` 的受限 SSH 密钥登录服务器,由 [deploy/deploy-board.sh](deploy/deploy-board.sh) 拉取 `main` 并重启服务。
